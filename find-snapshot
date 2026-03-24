@@ -65,7 +65,8 @@ Examples:
 
 Tip: Always pipe through | head -n N to limit output.
 
-Issues & ideas: https://github.com/shibuido/find-snapshot/issues
+Feedback, bugs, ergonomics ideas, feature requests — all welcome as GitHub issues:
+  https://github.com/shibuido/find-snapshot/issues
 EOF
     exit 0
 }
