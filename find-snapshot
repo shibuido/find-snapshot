@@ -10,15 +10,15 @@ set -euo pipefail
 PROG_NAME="find-snapshot"
 
 # --- Configuration (override via environment) ---
-FIND_SNAPSHOT_CACHE_DIR="${FIND_SNAPSHOT_CACHE_DIR:-/tmp/find-snapshot}"
+FIND_SNAPSHOT_CACHE_DIR="${FIND_SNAPSHOT_CACHE_DIR:-/tmp/find-snapshot-${UID}}"
 FIND_SNAPSHOT_MAX_AGE="${FIND_SNAPSHOT_MAX_AGE:-2}"
 
 # FIND_SNAPSHOT_PATHS: colon-separated list of directories to index.
-# Falls back to current directory if unset.
+# Falls back to $HOME if unset.
 if [[ -n "${FIND_SNAPSHOT_PATHS:-}" ]]; then
     IFS=':' read -ra MOUNT_PATHS <<< "$FIND_SNAPSHOT_PATHS"
 else
-    MOUNT_PATHS=("$(pwd)")
+    MOUNT_PATHS=("$HOME")
 fi
 
 TODAY=$(date +%y%m%d)
@@ -41,8 +41,8 @@ Commands:
   sk [ARGS...]           xzcat | sk (extra args passed to sk, e.g. -f "pattern")
 
 Configuration (environment variables):
-  FIND_SNAPSHOT_PATHS     Colon-separated directories to index (default: \$PWD)
-  FIND_SNAPSHOT_CACHE_DIR Cache directory (default: /tmp/find-snapshot)
+  FIND_SNAPSHOT_PATHS     Colon-separated directories to index (default: \$HOME)
+  FIND_SNAPSHOT_CACHE_DIR Cache directory (default: /tmp/find-snapshot-\$UID)
   FIND_SNAPSHOT_MAX_AGE   Days before cache cleanup (default: 2)
 
 Cache:

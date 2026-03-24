@@ -39,8 +39,8 @@ All settings are optional environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `FIND_SNAPSHOT_PATHS` | `$PWD` | Colon-separated directories to index |
-| `FIND_SNAPSHOT_CACHE_DIR` | `/tmp/find-snapshot` | Where to store compressed snapshots |
+| `FIND_SNAPSHOT_PATHS` | `$HOME` | Colon-separated directories to index |
+| `FIND_SNAPSHOT_CACHE_DIR` | `/tmp/find-snapshot-$UID` | Where to store compressed snapshots (per-user) |
 | `FIND_SNAPSHOT_MAX_AGE` | `2` | Days before old snapshots are cleaned up |
 
 ## Dependencies
