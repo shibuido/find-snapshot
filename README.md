@@ -29,7 +29,8 @@ export FIND_SNAPSHOT_PATHS="/home/user:/srv/data"
 # Search
 find-snapshot grep -i "\.pdf$"              # find all PDFs
 find-snapshot cat | head -20                # list first 20 cached files
-find-snapshot sk -f "report" | head -10     # fuzzy match files
+find-snapshot sk -f "report" | head -10     # fuzzy match files (skim)
+find-snapshot fzf -f "report" | head -10    # fuzzy match files (fzf)
 find-snapshot -d sk -f "projects"           # fuzzy match directories
 ```
 
@@ -48,7 +49,8 @@ All settings are optional environment variables:
 * `bash` (4.0+)
 * `xz` (xzcat, xzgrep)
 * `find` (coreutils)
-* `sk` (skim fuzzy finder) - only needed for the `sk` command
+* `sk` (skim fuzzy finder) - optional, only needed for the `sk` command
+* `fzf` (fuzzy finder) - optional, only needed for the `fzf` command
 
 ## License
 

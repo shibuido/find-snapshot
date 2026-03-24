@@ -39,6 +39,7 @@ Commands:
   cat [ARGS...]          xzcat the snapshot (pipe-friendly, pass extra xzcat args)
   grep PATTERN [ARGS...] xzgrep PATTERN over the snapshot (extra args passed to xzgrep)
   sk [ARGS...]           xzcat | sk (extra args passed to sk, e.g. -f "pattern")
+  fzf [ARGS...]          xzcat | fzf (extra args passed to fzf, e.g. -f "pattern")
 
 Configuration (environment variables):
   FIND_SNAPSHOT_PATHS     Colon-separated directories to index (default: \$HOME)
@@ -57,6 +58,7 @@ Examples:
   $PROG_NAME sk -f "Lohnausweis" | head -10     # fuzzy match files
   $PROG_NAME -d sk -f "projects" | head -10     # fuzzy match directories
   $PROG_NAME grep "config" --count              # count matches (xzgrep arg)
+  $PROG_NAME fzf -f "report" | head -10        # fuzzy match with fzf
 
   # Index specific directories:
   FIND_SNAPSHOT_PATHS="/home/user:/srv/data" $PROG_NAME grep "report"
@@ -190,10 +192,15 @@ case "$CMD" in
         xzgrep "$@" "$TARGET"
         ;;
     sk)
+        command -v sk >/dev/null 2>&1 || die "sk (skim) not found — install it or use fzf/grep instead"
         xzcat "$TARGET" | sk "$@"
         ;;
+    fzf)
+        command -v fzf >/dev/null 2>&1 || die "fzf not found — install it or use sk/grep instead"
+        xzcat "$TARGET" | fzf "$@"
+        ;;
     *)
-        echo "$PROG_NAME: error: unknown command: $CMD (expected: cat, grep, sk)" >&2
+        echo "$PROG_NAME: error: unknown command: $CMD (expected: cat, grep, sk, fzf)" >&2
         exit 1
         ;;
 esac
