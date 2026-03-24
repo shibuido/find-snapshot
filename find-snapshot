@@ -64,6 +64,8 @@ Examples:
   FIND_SNAPSHOT_PATHS="/home/user:/srv/data" $PROG_NAME grep "report"
 
 Tip: Always pipe through | head -n N to limit output.
+
+Issues & ideas: https://github.com/shibuido/find-snapshot/issues
 EOF
     exit 0
 }
