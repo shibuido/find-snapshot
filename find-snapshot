@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# find-snapshot - Fast cached find searches over xz-compressed file/dir snapshots
+#
+# Creates daily xz snapshots of configured directories and provides
+# cat/grep/sk operations over them.
+#
+# Usage: find-snapshot [--dirs|-d] {cat|grep|sk} [args...]
+set -euo pipefail
+
+PROG_NAME="find-snapshot"
+
+# --- Configuration (override via environment) ---
+FIND_SNAPSHOT_CACHE_DIR="${FIND_SNAPSHOT_CACHE_DIR:-/tmp/find-snapshot}"
+FIND_SNAPSHOT_MAX_AGE="${FIND_SNAPSHOT_MAX_AGE:-2}"
+
+# FIND_SNAPSHOT_PATHS: colon-separated list of directories to index.
+# Falls back to current directory if unset.
+if [[ -n "${FIND_SNAPSHOT_PATHS:-}" ]]; then
+    IFS=':' read -ra MOUNT_PATHS <<< "$FIND_SNAPSHOT_PATHS"
+else
+    MOUNT_PATHS=("$(pwd)")
+fi
+
+TODAY=$(date +%y%m%d)
+TYPE="files"  # default; --dirs switches to "dirs"
+
+usage() {
+    cat <<EOF
+Usage: $PROG_NAME [OPTIONS] COMMAND [ARGS...]
+
+Cached find search over xz-compressed file/directory snapshots.
+Automatically creates today's snapshot if missing and cleans up old ones.
+
+Options:
+  --dirs, -d       Search directory names instead of file names (default: files)
+  --help, -h, help Show this help message
+
+Commands:
+  cat [ARGS...]          xzcat the snapshot (pipe-friendly, pass extra xzcat args)
+  grep PATTERN [ARGS...] xzgrep PATTERN over the snapshot (extra args passed to xzgrep)
+  sk [ARGS...]           xzcat | sk (extra args passed to sk, e.g. -f "pattern")
+
+Configuration (environment variables):
+  FIND_SNAPSHOT_PATHS     Colon-separated directories to index (default: \$PWD)
+  FIND_SNAPSHOT_CACHE_DIR Cache directory (default: /tmp/find-snapshot)
+  FIND_SNAPSHOT_MAX_AGE   Days before cache cleanup (default: 2)
+
+Cache:
+  Directory: ${FIND_SNAPSHOT_CACHE_DIR}/
+  Files:     YYMMDD-files.find.xz, YYMMDD-dirs.find.xz
+  Source:    find \${FIND_SNAPSHOT_PATHS}
+  Cleanup:   cache files older than ${FIND_SNAPSHOT_MAX_AGE} days are removed automatically
+
+Examples:
+  $PROG_NAME cat | head -20                     # list first 20 cached files
+  $PROG_NAME grep -i "\\.pdf\$"                   # find all PDFs
+  $PROG_NAME sk -f "Lohnausweis" | head -10     # fuzzy match files
+  $PROG_NAME -d sk -f "projects" | head -10     # fuzzy match directories
+  $PROG_NAME grep "config" --count              # count matches (xzgrep arg)
+
+  # Index specific directories:
+  FIND_SNAPSHOT_PATHS="/home/user:/srv/data" $PROG_NAME grep "report"
+
+Tip: Always pipe through | head -n N to limit output.
+EOF
+    exit 0
+}
+
+die() { echo "$PROG_NAME: error: $*" >&2; exit 1; }
+info() { echo "$PROG_NAME: $*" >&2; }
+
+cache_file() {
+    echo "${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-${TYPE}.find.xz"
+}
+
+# Check that search paths are accessible (at least one must have content)
+check_paths() {
+    local any_valid=false
+    for p in "${MOUNT_PATHS[@]}"; do
+        if [[ -d "$p" ]] && [[ -n "$(ls -A "$p" 2>/dev/null)" ]]; then
+            any_valid=true
+            break
+        fi
+    done
+    if ! $any_valid; then
+        die "no accessible directories found at: ${MOUNT_PATHS[*]}
+Hint: set FIND_SNAPSHOT_PATHS to colon-separated list of directories to index"
+    fi
+}
+
+# Remove cache files older than FIND_SNAPSHOT_MAX_AGE (by file mtime)
+cleanup_old() {
+    [[ -d "$FIND_SNAPSHOT_CACHE_DIR" ]] || return 0
+    local removed=0
+    while IFS= read -r -d '' f; do
+        rm -f "$f"
+        ((removed++))
+    done < <(find "$FIND_SNAPSHOT_CACHE_DIR" -maxdepth 1 -name "*.find.xz" -mtime +"$FIND_SNAPSHOT_MAX_AGE" -print0 2>/dev/null)
+    if (( removed > 0 )); then
+        info "cleaned up $removed old cache file(s)"
+    fi
+}
+
+# Build today's cache if missing. Builds both files and dirs in parallel.
+ensure_cache() {
+    local files_cache="${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-files.find.xz"
+    local dirs_cache="${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-dirs.find.xz"
+
+    # If requested type already exists, nothing to do
+    local target
+    target=$(cache_file)
+    [[ -s "$target" ]] && return 0
+
+    check_paths
+    mkdir -p "$FIND_SNAPSHOT_CACHE_DIR"
+
+    # Build whichever are missing, in parallel
+    local pids=()
+
+    if [[ ! -s "$files_cache" ]]; then
+        info "building files cache (${TODAY}-files.find.xz)..."
+        ( find "${MOUNT_PATHS[@]}" -type f 2>/dev/null | xz -T0 > "$files_cache" ) &
+        pids+=($!)
+    fi
+
+    if [[ ! -s "$dirs_cache" ]]; then
+        info "building dirs cache (${TODAY}-dirs.find.xz)..."
+        ( find "${MOUNT_PATHS[@]}" -type d 2>/dev/null | xz -T0 > "$dirs_cache" ) &
+        pids+=($!)
+    fi
+
+    if (( ${#pids[@]} > 0 )); then
+        info "waiting for cache build (this may take a few minutes)..."
+        local fail=0
+        for pid in "${pids[@]}"; do
+            wait "$pid" || ((fail++))
+        done
+        if (( fail > 0 )); then
+            die "cache build failed ($fail job(s))"
+        fi
+        info "cache ready"
+    fi
+}
+
+# --- Argument parsing ---
+
+# Parse leading options before command
+while (( $# > 0 )); do
+    case "$1" in
+        --dirs|-d)
+            TYPE="dirs"
+            shift
+            ;;
+        --help|-h|help)
+            usage
+            ;;
+        -*)
+            die "unknown option: $1 (try --help)"
+            ;;
+        *)
+            break  # first non-option is the command
+            ;;
+    esac
+done
+
+(( $# >= 1 )) || { usage; }
+
+CMD="$1"
+shift
+
+# --- Main ---
+
+cleanup_old
+ensure_cache
+
+TARGET=$(cache_file)
+
+# Disable pipefail/errexit for output commands — downstream pipe closure
+# (e.g. | head) causes SIGPIPE which is normal, not an error.
+set +eo pipefail
+
+case "$CMD" in
+    cat)
+        xzcat "$TARGET" "$@"
+        ;;
+    grep)
+        (( $# >= 1 )) || { echo "$PROG_NAME: error: grep requires a PATTERN argument" >&2; exit 1; }
+        # Pass all args to xzgrep, append cache file at the end.
+        # This lets users write: find-snapshot grep -i "pattern" (natural grep syntax)
+        xzgrep "$@" "$TARGET"
+        ;;
+    sk)
+        xzcat "$TARGET" | sk "$@"
+        ;;
+    *)
+        echo "$PROG_NAME: error: unknown command: $CMD (expected: cat, grep, sk)" >&2
+        exit 1
+        ;;
+esac
