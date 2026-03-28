@@ -37,6 +37,7 @@ Options:
 
 Commands:
   build [--force]        Build today's cache (--force to delete and rebuild)
+  status                 Show configuration and cache file details
   cat [ARGS...]          xzcat the snapshot (pipe-friendly, pass extra xzcat args)
   grep PATTERN [ARGS...] xzgrep PATTERN over the snapshot (extra args passed to xzgrep)
   sk [ARGS...]           xzcat | sk (extra args passed to sk, e.g. -f "pattern")
@@ -62,6 +63,7 @@ Examples:
   $PROG_NAME fzf -f "report" | head -10        # fuzzy match with fzf
   $PROG_NAME build                              # build today's cache if missing
   $PROG_NAME build --force                      # delete and rebuild today's cache
+  $PROG_NAME status                             # show config and cache details
 
   # Index specific directories:
   FIND_SNAPSHOT_PATHS="/home/user:/srv/data" $PROG_NAME grep "report"
@@ -216,6 +218,64 @@ if [[ "$CMD" == "build" ]]; then
     exit 0
 fi
 
+# Handle status command — read-only, no cleanup, no auto-build
+if [[ "$CMD" == "status" ]]; then
+    # === Configuration ===
+    echo "=== Configuration ==="
+    if [[ -n "${FIND_SNAPSHOT_PATHS:-}" ]]; then
+        echo "  Paths:     ${FIND_SNAPSHOT_PATHS}"
+    else
+        echo "  Paths:     ${HOME} (default)"
+    fi
+    echo "  Cache dir: ${FIND_SNAPSHOT_CACHE_DIR}"
+    echo "  Max age:   ${FIND_SNAPSHOT_MAX_AGE} days"
+    echo
+
+    # Collect cache files
+    if [[ ! -d "$FIND_SNAPSHOT_CACHE_DIR" ]] || ! ls "$FIND_SNAPSHOT_CACHE_DIR"/*.find.xz &>/dev/null; then
+        echo "No cache files found. Run '$PROG_NAME build' to create one."
+        exit 0
+    fi
+
+    # === Today's cache ===
+    echo "=== Today's cache (${TODAY}) ==="
+    today_found=false
+    for f in "$FIND_SNAPSHOT_CACHE_DIR"/${TODAY}-*.find.xz; do
+        [[ -f "$f" ]] || continue
+        today_found=true
+        fname=$(basename "$f")
+        fsize=$(du -h "$f" | cut -f1)
+        fdate=$(date -r "$f" "+%Y-%m-%d %H:%M")
+        printf "  %-30s %6s  %s\n" "$fname" "$fsize" "$fdate"
+    done
+    if ! $today_found; then
+        echo "  (not yet built)"
+    fi
+    echo
+
+    # === Older cache files ===
+    older_found=false
+    for f in "$FIND_SNAPSHOT_CACHE_DIR"/*.find.xz; do
+        [[ -f "$f" ]] || continue
+        fname=$(basename "$f")
+        # Skip today's files
+        [[ "$fname" == ${TODAY}-* ]] && continue
+        if ! $older_found; then
+            echo "=== Older cache files ==="
+            older_found=true
+        fi
+        fsize=$(du -h "$f" | cut -f1)
+        fdate=$(date -r "$f" "+%Y-%m-%d %H:%M")
+        printf "  %-30s %6s  %s\n" "$fname" "$fsize" "$fdate"
+    done
+    if ! $older_found; then
+        echo "=== Older cache files ==="
+        echo "  (none)"
+    fi
+
+    exit 0
+fi
+
 ensure_cache
 
 TARGET=$(cache_file)
@@ -243,7 +303,7 @@ case "$CMD" in
         xzcat "$TARGET" | fzf "$@"
         ;;
     *)
-        echo "$PROG_NAME: error: unknown command: $CMD (expected: build, cat, grep, sk, fzf)" >&2
+        echo "$PROG_NAME: error: unknown command: $CMD (expected: build, status, cat, grep, sk, fzf)" >&2
         exit 1
         ;;
 esac
