@@ -180,45 +180,7 @@ shift
 
 # --- Main ---
 
-cleanup_old
-
-# Handle build command before ensure_cache — it may need to delete cache first
-if [[ "$CMD" == "build" ]]; then
-    FORCE=false
-    for arg in "$@"; do
-        case "$arg" in
-            --force) FORCE=true ;;
-            *) die "build: unknown option: $arg" ;;
-        esac
-    done
-
-    if $FORCE; then
-        local_files="${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-files.find.xz"
-        local_dirs="${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-dirs.find.xz"
-        if [[ -f "$local_files" ]] || [[ -f "$local_dirs" ]]; then
-            info "removing today's cache files (--force)..."
-            rm -f "$local_files" "$local_dirs"
-        fi
-    fi
-
-    # Check if cache already exists before calling ensure_cache
-    files_exists=false
-    dirs_exists=false
-    [[ -s "${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-files.find.xz" ]] && files_exists=true
-    [[ -s "${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-dirs.find.xz" ]] && dirs_exists=true
-
-    # ensure_cache early-exits if the current TYPE's cache exists,
-    # so call for each type to ensure both are built.
-    TYPE="files"; ensure_cache
-    TYPE="dirs"; ensure_cache
-
-    if $files_exists && $dirs_exists; then
-        info "cache already up to date"
-    fi
-    exit 0
-fi
-
-# Handle status command — read-only, no cleanup, no auto-build
+# Handle status command first — it's read-only (no cleanup, no auto-build)
 if [[ "$CMD" == "status" ]]; then
     # === Configuration ===
     echo "=== Configuration ==="
@@ -273,6 +235,44 @@ if [[ "$CMD" == "status" ]]; then
         echo "  (none)"
     fi
 
+    exit 0
+fi
+
+cleanup_old
+
+# Handle build command before ensure_cache — it may need to delete cache first
+if [[ "$CMD" == "build" ]]; then
+    FORCE=false
+    for arg in "$@"; do
+        case "$arg" in
+            --force) FORCE=true ;;
+            *) die "build: unknown option: $arg" ;;
+        esac
+    done
+
+    if $FORCE; then
+        today_files="${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-files.find.xz"
+        today_dirs="${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-dirs.find.xz"
+        if [[ -f "$today_files" ]] || [[ -f "$today_dirs" ]]; then
+            info "removing today's cache files (--force)..."
+            rm -f "$today_files" "$today_dirs"
+        fi
+    fi
+
+    # Check if cache already exists before calling ensure_cache
+    files_exists=false
+    dirs_exists=false
+    [[ -s "${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-files.find.xz" ]] && files_exists=true
+    [[ -s "${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-dirs.find.xz" ]] && dirs_exists=true
+
+    # ensure_cache early-exits if the current TYPE's cache exists,
+    # so call for each type to ensure both are built.
+    TYPE="files"; ensure_cache
+    TYPE="dirs"; ensure_cache
+
+    if $files_exists && $dirs_exists; then
+        info "cache already up to date"
+    fi
     exit 0
 fi
 
