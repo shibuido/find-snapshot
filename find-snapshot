@@ -36,6 +36,7 @@ Options:
   --help, -h, help Show this help message
 
 Commands:
+  build [--force]        Build today's cache (--force to delete and rebuild)
   cat [ARGS...]          xzcat the snapshot (pipe-friendly, pass extra xzcat args)
   grep PATTERN [ARGS...] xzgrep PATTERN over the snapshot (extra args passed to xzgrep)
   sk [ARGS...]           xzcat | sk (extra args passed to sk, e.g. -f "pattern")
@@ -59,6 +60,8 @@ Examples:
   $PROG_NAME -d sk -f "projects" | head -10     # fuzzy match directories
   $PROG_NAME grep "config" --count              # count matches (xzgrep arg)
   $PROG_NAME fzf -f "report" | head -10        # fuzzy match with fzf
+  $PROG_NAME build                              # build today's cache if missing
+  $PROG_NAME build --force                      # delete and rebuild today's cache
 
   # Index specific directories:
   FIND_SNAPSHOT_PATHS="/home/user:/srv/data" $PROG_NAME grep "report"
@@ -176,6 +179,43 @@ shift
 # --- Main ---
 
 cleanup_old
+
+# Handle build command before ensure_cache — it may need to delete cache first
+if [[ "$CMD" == "build" ]]; then
+    FORCE=false
+    for arg in "$@"; do
+        case "$arg" in
+            --force) FORCE=true ;;
+            *) die "build: unknown option: $arg" ;;
+        esac
+    done
+
+    if $FORCE; then
+        local_files="${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-files.find.xz"
+        local_dirs="${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-dirs.find.xz"
+        if [[ -f "$local_files" ]] || [[ -f "$local_dirs" ]]; then
+            info "removing today's cache files (--force)..."
+            rm -f "$local_files" "$local_dirs"
+        fi
+    fi
+
+    # Check if cache already exists before calling ensure_cache
+    files_exists=false
+    dirs_exists=false
+    [[ -s "${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-files.find.xz" ]] && files_exists=true
+    [[ -s "${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-dirs.find.xz" ]] && dirs_exists=true
+
+    # ensure_cache early-exits if the current TYPE's cache exists,
+    # so call for each type to ensure both are built.
+    TYPE="files"; ensure_cache
+    TYPE="dirs"; ensure_cache
+
+    if $files_exists && $dirs_exists; then
+        info "cache already up to date"
+    fi
+    exit 0
+fi
+
 ensure_cache
 
 TARGET=$(cache_file)
@@ -203,7 +243,7 @@ case "$CMD" in
         xzcat "$TARGET" | fzf "$@"
         ;;
     *)
-        echo "$PROG_NAME: error: unknown command: $CMD (expected: cat, grep, sk, fzf)" >&2
+        echo "$PROG_NAME: error: unknown command: $CMD (expected: build, cat, grep, sk, fzf)" >&2
         exit 1
         ;;
 esac
