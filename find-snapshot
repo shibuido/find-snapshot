@@ -23,6 +23,7 @@ fi
 
 TODAY=$(date +%y%m%d)
 TYPE="files"  # default; --dirs switches to "dirs"
+USE_LATEST=false  # --latest: skip build, use newest existing cache
 
 usage() {
     cat <<EOF
@@ -33,6 +34,7 @@ Automatically creates today's snapshot if missing and cleans up old ones.
 
 Options:
   --dirs, -d       Search directory names instead of file names (default: files)
+  --latest         Use newest existing cache (skip build, skip cleanup)
   --help, -h, help Show this help message
 
 Commands:
@@ -65,6 +67,9 @@ Examples:
   $PROG_NAME build --force                      # delete and rebuild today's cache
   $PROG_NAME status                             # show config and cache details
 
+  # Use existing cache without waiting for a new build:
+  $PROG_NAME --latest grep -i "\.pdf\$"
+
   # Index specific directories:
   FIND_SNAPSHOT_PATHS="/home/user:/srv/data" $PROG_NAME grep "report"
 
@@ -81,6 +86,14 @@ info() { echo "$PROG_NAME: $*" >&2; }
 
 cache_file() {
     echo "${FIND_SNAPSHOT_CACHE_DIR}/${TODAY}-${TYPE}.find.xz"
+}
+
+# Find the newest existing cache file for the current TYPE.
+# Relies on YYMMDD filenames sorting chronologically.
+latest_cache_file() {
+    # YYMMDD prefix sorts lexicographically = chronologically
+    # shellcheck disable=SC2012
+    ls -1 "${FIND_SNAPSHOT_CACHE_DIR}"/*-${TYPE}.find.xz 2>/dev/null | sort | tail -1 || true
 }
 
 # Check that search paths are accessible (at least one must have content)
@@ -161,6 +174,10 @@ while (( $# > 0 )); do
             TYPE="dirs"
             shift
             ;;
+        --latest)
+            USE_LATEST=true
+            shift
+            ;;
         --help|-h|help)
             usage
             ;;
@@ -238,6 +255,18 @@ if [[ "$CMD" == "status" ]]; then
     exit 0
 fi
 
+if $USE_LATEST; then
+    # --latest: skip cleanup and build, use newest existing cache
+    if [[ "$CMD" == "build" ]]; then
+        die "--latest cannot be used with build"
+    fi
+    TARGET=$(latest_cache_file)
+    if [[ -z "$TARGET" ]] || [[ ! -s "$TARGET" ]]; then
+        die "no existing ${TYPE} cache found in ${FIND_SNAPSHOT_CACHE_DIR}/ — run '$PROG_NAME build' first"
+    fi
+    info "using cached: $(basename "$TARGET")"
+else
+
 cleanup_old
 
 # Handle build command before ensure_cache — it may need to delete cache first
@@ -279,6 +308,8 @@ fi
 ensure_cache
 
 TARGET=$(cache_file)
+
+fi  # end of if $USE_LATEST ... else
 
 # Disable pipefail/errexit for output commands — downstream pipe closure
 # (e.g. | head) causes SIGPIPE which is normal, not an error.
